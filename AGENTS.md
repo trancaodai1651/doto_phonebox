@@ -32,7 +32,7 @@
    - Trang thiết lập (địa chỉ, PIN, QR) ở `http://127.0.0.1:8765/web-setup`. Trang này chỉ mở được trên máy tính.
 3. **Chứng chỉ Tailscale.** Khi client dùng tên MagicDNS (SNI), agent trả chứng chỉ từ `tailscale cert` (`TailscaleCert`). Khi kết nối bằng IP, agent dùng chứng chỉ tự ký mà ứng dụng Android đã ghim.
    - Lỗi hiện tại: tailnet chưa bật HTTPS Certificates.
-4. **Tự động cập nhật tắt mặc định** (`updates.auto = false`). Nếu bật, bản gốc sẽ ghi đè fork.
+4. **Tự động cập nhật tắt mặc định** (`updates.auto = false`). Từ 0.9.21, agent dùng GitHub Releases của `trancaodai1651/doto_phonebox` làm nguồn cập nhật mặc định.
 
 File chính: `NetAccess.cs`, `TailscaleAccess.cs`, `Program.cs` (Kestrel và middleware cổng Wi‑Fi, tìm chữ `Fork`), `Config.cs` (`LanConfig`, `Normalize`), `Lan.cs`.
 

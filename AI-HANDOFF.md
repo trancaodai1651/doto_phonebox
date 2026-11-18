@@ -27,8 +27,9 @@ Mục mới nhất ở **cuối** file. Mỗi phiên làm việc (Claude hoặc 
   - Chưa commit.
 - **Bước tiếp theo:** người dùng thử trên iPhone/iPad. Có thể làm thêm: autostart; một CA riêng kèm profile iOS để không còn cảnh báo chứng chỉ khi mở bằng IP.
 
-## 2026-11-18 16:59 · Codex · Chuẩn bị phát hành PhoneBox 0.9.21
-- Đã làm: chuẩn bị bộ cài Windows x64/ARM64 và macOS Intel/Apple Silicon, thiết lập ký APK bằng khóa của fork, đổi nguồn tải APK và cập nhật sang repo của fork. Đã bỏ thông tin mạng riêng khỏi lịch sử chưa công khai.
-- Đã kiểm thử: dotnet test trước khi đóng gói đạt 1112/1112. Workflow release kiểm tra HĐH, kiến trúc, APK và các bộ cài trước khi tạo release.
-- Còn dở / lỗi biết: đang kiểm chứng bộ cài trên GitHub Actions. Windows chưa ký Authenticode, macOS chưa công chứng.
-- Bước tiếp theo: xác minh các tệp trên GitHub rồi thử bản Windows trên agent đang chạy.
+## 2026-11-18 17:17 · Codex · Phát hành PhoneBox 0.9.21
+- Đã làm: đẩy mã nguồn lên `origin/main`, giữ repo gốc ở remote `upstream` và bỏ thông tin mạng riêng khỏi lịch sử chưa công khai. [Release v0.9.21](https://github.com/trancaodai1651/doto_phonebox/releases/tag/v0.9.21) gồm bộ cài Windows x64/ARM64, macOS Intel/Apple Silicon và APK ký bằng khóa của fork.
+- Đã kiểm thử: `dotnet test` đạt 1112/1112, Playwright đạt 179/179. [GitHub Actions](https://github.com/trancaodai1651/doto_phonebox/actions/runs/44282671613) cài và chạy agent trên cả bốn kiến trúc, kiểm tra chữ ký APK. Đã đối chiếu SHA-256 và xác nhận ba link tải công khai trả HTTP 200.
+- Đã triển khai bản dựng từ commit phát hành lên Windows cục bộ. Agent trả phiên bản 0.9.21 và `tools/test-web-access.ps1` đạt 24/24 bước trên hai địa chỉ.
+- Còn dở / lỗi biết: trình chạy lệnh cục bộ chặn lệnh thử bộ cài Windows tải về. Bộ cài Windows chưa ký Authenticode, macOS chưa công chứng Apple. Chưa có điện thoại Android kết nối để cài thử. GitHub Pages của fork chưa bật.
+- Bước tiếp theo: dùng lại khóa ký Android trong GitHub Actions Secrets khi phát hành APK mới. Bản sao cục bộ nằm trong thư mục `%APPDATA%\PhoneBox\release-signing`.
