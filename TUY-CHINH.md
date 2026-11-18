@@ -3,6 +3,18 @@
 Fork của [ersinkoc/phonebox](https://github.com/ersinkoc/phonebox) (0.9.20). Chi tiết kỹ thuật cho AI và người phát triển
 nằm trong [AGENTS.md](AGENTS.md); nhật ký các phiên làm việc nằm trong [AI-HANDOFF.md](AI-HANDOFF.md).
 
+## Cài đặt
+
+Tải bộ cài và mã kiểm tra SHA-256 tại [GitHub Releases của bản tuỳ chỉnh](https://github.com/trancaodai1651/doto_phonebox/releases/latest).
+
+| Thiết bị | Cách cài |
+|---|---|
+| Windows x64 hoặc ARM64 | Mở `PhoneBox-…-windows-universal.exe`. Bộ cài chọn bản phù hợp với máy và tạo lối tắt PhoneBox trong Start Menu. |
+| macOS 14 trở lên, Intel hoặc Apple Silicon | Mở `PhoneBox-…-macos-universal.pkg`, rồi mở PhoneBox trong Applications. Trên máy Mac đã chạy agent từ bộ cài trước đó, hãy thoát agent cũ trước khi mở PhoneBox. |
+| Android 5.0 trở lên | Mở `PhoneBox-….apk` trên điện thoại và cài. Android chỉ cài đè nếu bản đang dùng có cùng khóa ký. Hãy lưu các cài đặt cần giữ trước khi gỡ bản dùng khóa khác. |
+
+Windows và macOS đã kèm .NET. Bộ cài Windows chưa ký Authenticode và bộ cài macOS chưa được Apple công chứng, nên hệ điều hành có thể hiện cảnh báo. Để mở cài đặt agent sau khi chạy, vào `http://127.0.0.1:8765/` trên máy tính. Nếu dùng Android qua USB, máy tính cần có ADB và điện thoại cần bật USB debugging.
+
 ## Dùng trên iPhone / iPad
 1. Mở `http://127.0.0.1:8765/web-setup` trên máy tính. Trang này hiện địa chỉ cần gõ và mã PIN.
 2. Trên iPhone/iPad, mở Safari và gõ `192.0.2.45:8766` (Ethernet) hoặc `100.100.10.20:8766` (Tailscale).

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.21 — 2026-11-18
+
+- Added the browser panel for iPhone and iPad, with PIN sign-in and a local setup page.
+- Added LAN access modes, HTTP-to-HTTPS redirects on the network port and support for Tailscale HTTPS certificates.
+- Added universal desktop installers for Windows (x64 and ARM64) and macOS (Intel and Apple Silicon), plus a signed Android APK.
+- Automatic updates are off by default.
+
 ## 0.9.20 — 2026-11-18
 
 Notes edited from the phone, a Home Assistant entity editor, a translated settings page, Antigravity quotas with

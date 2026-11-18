@@ -26,7 +26,6 @@ jobs:
     uses: ./.github/workflows/build.yml
 
   version:
-    needs: checks
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
@@ -66,10 +65,16 @@ jobs:
           PHONEBOX_KEY_ALIAS: ${{ secrets.PHONEBOX_KEY_ALIAS }}
           PHONEBOX_KEY_PASSWORD: ${{ secrets.PHONEBOX_KEY_PASSWORD }}
         run: |
+          test -n "$PHONEBOX_STORE_PASSWORD"
+          test -n "$PHONEBOX_KEY_ALIAS"
+          test -n "$PHONEBOX_KEY_PASSWORD"
           chmod +x gradlew
-          ./gradlew assembleRelease --console=plain
+          ./gradlew lintRelease assembleRelease --no-daemon --console=plain
           mkdir -p ../dist
-          cp app/build/outputs/apk/release/app-release.apk "../dist/PhoneBox-${{ needs.version.outputs.version }}.apk"
+          apk="../dist/PhoneBox-${{ needs.version.outputs.version }}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
+          apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          "$apksigner" verify --verbose --print-certs "$apk"
       - name: Remove the signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/release.keystore"
@@ -81,9 +86,11 @@ jobs:
   agent:
     needs: version
     strategy:
+      fail-fast: false
       matrix:
         include:
           - { os: windows-latest, rid: win-x64, tfm: net10.0-windows10.0.19041.0 }
+          - { os: windows-11-arm, rid: win-arm64, tfm: net10.0-windows10.0.19041.0 }
           - { os: ubuntu-latest, rid: linux-x64, tfm: net10.0 }
           - { os: ubuntu-24.04-arm, rid: linux-arm64, tfm: net10.0 }
           - { os: macos-latest, rid: osx-arm64, tfm: net10.0 }
@@ -97,8 +104,6 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: 10.0.x
-      - name: Unit tests
-        run: dotnet test agent/PhoneBox.Agent.Tests --nologo
       # Self-contained single file: no .NET runtime to install. Not compressed (the zip is barely smaller and a
       # compressed bundle costs about 90 MB more memory in a process that runs all day); native libraries stay
       # loose next to the exe instead of being extracted to the temp folder at run time.
@@ -128,14 +133,113 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path out/* -DestinationPath "dist/PhoneBoxAgent-${{ needs.version.outputs.version }}-${{ matrix.rid }}.zip"
+          $zip = "PhoneBoxAgent-${{ needs.version.outputs.version }}-${{ matrix.rid }}.zip"
+          if ($IsWindows) {
+            Compress-Archive -Path out/* -DestinationPath "dist/$zip"
+          } else {
+            Push-Location out
+            zip -qr "../dist/$zip" .
+            Pop-Location
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-agent-${{ matrix.rid }}
           path: dist/
 
+  installer:
+    needs: [version, agent]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, platform: windows, prefix: win, ext: exe }
+          - { os: macos-15, platform: macos, prefix: osx, ext: pkg }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-agent-${{ matrix.prefix }}-*
+          merge-multiple: true
+          path: archives
+      - name: Build the Windows installer
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $version = '${{ needs.version.outputs.version }}'
+          foreach ($rid in 'win-x64', 'win-arm64') {
+            Expand-Archive "archives/PhoneBoxAgent-$version-$rid.zip" "payload/$rid"
+          }
+          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          }
+          & $iscc "/DVersion=$version" packaging/windows/PhoneBox.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build the macOS installer
+        if: matrix.platform == 'macos'
+        run: |
+          version='${{ needs.version.outputs.version }}'
+          for rid in osx-arm64 osx-x64; do
+            mkdir -p "payload/$rid"
+            unzip -q "archives/PhoneBoxAgent-$version-$rid.zip" -d "payload/$rid"
+          done
+          bash packaging/macos/build-pkg.sh "$version"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-installer-${{ matrix.platform }}
+          path: dist/*.${{ matrix.ext }}
+          if-no-files-found: error
+
+  test-installer:
+    needs: [version, installer]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, platform: windows }
+          - { os: windows-11-arm, platform: windows }
+          - { os: macos-15, platform: macos }
+          - { os: macos-15-intel, platform: macos }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-installer-${{ matrix.platform }}
+          path: dist
+      - name: Install and run on Windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $version = '${{ needs.version.outputs.version }}'
+          $setup = "dist/PhoneBox-$version-windows-universal.exe"
+          $result = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          if ($result.ExitCode) { throw "Setup failed with exit code $($result.ExitCode)" }
+          $exe = Join-Path $env:LOCALAPPDATA 'PhoneBox/app/PhoneBoxAgent.exe'
+          # Check the PE header too: x64 emulation on ARM must not mask incorrect installer selection.
+          $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($exe))
+          try {
+            $reader.BaseStream.Position = 0x3c
+            $reader.BaseStream.Position = $reader.ReadInt32() + 4
+            $expected = if (([Runtime.InteropServices.RuntimeInformation]::OSArchitecture) -eq 'Arm64') { 0xaa64 } else { 0x8664 }
+            if ($reader.ReadUInt16() -ne $expected) { throw 'Setup installed the wrong architecture' }
+          } finally {
+            $reader.Dispose()
+          }
+          python tools/smoke-agent.py $exe --version $version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Install and run on macOS
+        if: matrix.platform == 'macos'
+        run: |
+          version='${{ needs.version.outputs.version }}'
+          sudo installer -pkg "dist/PhoneBox-$version-macos-universal.pkg" -target /
+          codesign --verify --deep --strict /Applications/PhoneBox.app
+          python3 tools/smoke-agent.py /Applications/PhoneBox.app/Contents/MacOS/PhoneBox --version "$version"
+
   publish:
-    needs: [version, apk, agent]
+    needs: [checks, version, apk, agent, test-installer]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -155,6 +259,8 @@ jobs:
           subject-path: |
             dist/*.apk
             dist/*.zip
+            dist/*.exe
+            dist/*.pkg
       - name: Save the provenance bundle
         env:
           BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
@@ -162,9 +268,15 @@ jobs:
       - name: Checksums
         working-directory: dist
         run: |
-          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 7
-          test "$(find . -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 5
-          test "$(find . -maxdepth 1 -type f -name '*.apk' | wc -l)" -eq 1
+          set -eu
+          v='${{ needs.version.outputs.version }}'
+          for rid in win-x64 win-arm64 linux-x64 linux-arm64 osx-arm64 osx-x64; do
+            test -s "PhoneBoxAgent-$v-$rid.zip"
+          done
+          test -s "PhoneBox-$v-windows-universal.exe"
+          test -s "PhoneBox-$v-macos-universal.pkg"
+          test -s "PhoneBox-$v.apk"
+          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 10
           sha256sum * > "SHA256SUMS-${{ needs.version.outputs.version }}.txt"
           cat "SHA256SUMS-${{ needs.version.outputs.version }}.txt"
       - name: Release notes from CHANGELOG.md
@@ -177,36 +289,20 @@ jobs:
           [ -s notes.md ] || echo "PhoneBox $v" > notes.md
           cat >> notes.md <<'EOF'
 
-          ---
-          [Code signing policy](https://github.com/ersinkoc/phonebox#code-signing-policy) · [Privacy policy](https://github.com/ersinkoc/phonebox/blob/main/PRIVACY.md)
+          | Nền tảng | Bộ cài |
+          |---|---|
+          | Windows x64 và ARM64 | `PhoneBox-VERSION-windows-universal.exe` |
+          | macOS 14 trở lên, Intel và Apple Silicon | `PhoneBox-VERSION-macos-universal.pkg` |
+          | Android 5.0 trở lên | `PhoneBox-VERSION.apk` |
+
+          APK được ký bằng khóa của fork. Bộ cài Windows chưa ký Authenticode và bộ cài macOS chưa được Apple công chứng.
+
+          [Hướng dẫn cài đặt và sử dụng](${{ github.server_url }}/${{ github.repository }}/blob/vVERSION/TUY-CHINH.md)
           EOF
+          sed -i "s/VERSION/$v/g" notes.md
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${{ needs.version.outputs.version }}"
           gh release create "v$v" dist/* --title "PhoneBox $v" --notes-file notes.md --target "${{ github.sha }}" ${{ inputs.draft && '--draft' || '' }}
-      # a draft's downloads are not public yet, so the package manifests follow only published releases
-      - name: Update the Scoop bucket and the winget manifests
-        if: ${{ !inputs.draft }}
-        run: |
-          v="${{ needs.version.outputs.version }}"
-          sha=$(sha256sum "dist/PhoneBoxAgent-$v-win-x64.zip" | cut -d' ' -f1)
-          python3 - "$v" "$sha" <<'PY'
-          import json, sys
-          v, sha = sys.argv[1], sys.argv[2]
-          p = 'bucket/phonebox.json'
-          m = json.load(open(p, encoding='utf-8'))
-          m['version'] = v
-          m['architecture']['64bit']['url'] = f'https://github.com/ersinkoc/phonebox/releases/download/v{v}/PhoneBoxAgent-{v}-win-x64.zip'
-          m['architecture']['64bit']['hash'] = sha
-          # the agent is self-contained since 0.9.7: no .NET runtime to suggest
-          m.get('suggest', {}).pop('.NET Desktop Runtime 10', None)
-          open(p, 'w', encoding='utf-8').write(json.dumps(m, indent=4, ensure_ascii=False) + '\n')
-          PY
-          python3 packaging/winget/make-manifests.py "$v" "$sha"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add bucket/phonebox.json packaging/winget/manifests
-          git commit -m "Scoop and winget manifests for $v"
-          git push origin HEAD:main

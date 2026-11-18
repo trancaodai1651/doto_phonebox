@@ -26,3 +26,9 @@ Mục mới nhất ở **cuối** file. Mỗi phiên làm việc (Claude hoặc 
   - Agent chưa tự khởi động cùng Windows.
   - Chưa commit.
 - **Bước tiếp theo:** người dùng thử trên iPhone/iPad. Có thể làm thêm: autostart; một CA riêng kèm profile iOS để không còn cảnh báo chứng chỉ khi mở bằng IP.
+
+## 2026-11-18 16:59 · Codex · Chuẩn bị phát hành PhoneBox 0.9.21
+- Đã làm: chuẩn bị bộ cài Windows x64/ARM64 và macOS Intel/Apple Silicon, thiết lập ký APK bằng khóa của fork, đổi nguồn tải APK và cập nhật sang repo của fork. Đã bỏ thông tin mạng riêng khỏi lịch sử chưa công khai.
+- Đã kiểm thử: dotnet test trước khi đóng gói đạt 1112/1112. Workflow release kiểm tra HĐH, kiến trúc, APK và các bộ cài trước khi tạo release.
+- Còn dở / lỗi biết: đang kiểm chứng bộ cài trên GitHub Actions. Windows chưa ký Authenticode, macOS chưa công chứng.
+- Bước tiếp theo: xác minh các tệp trên GitHub rồi thử bản Windows trên agent đang chạy.

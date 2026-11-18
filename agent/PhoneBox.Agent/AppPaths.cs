@@ -6,6 +6,7 @@ namespace PhoneBox.Agent;
 public static class AppPaths
 {
     public const string AppName = "PhoneBox";
+    public const string ReleaseRepo = "trancaodai1651/doto_phonebox";
 
     private static string Home => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile, Environment.SpecialFolderOption.DoNotVerify);
     private static string Xdg(string variable, string fallback) =>
@@ -34,7 +35,7 @@ public static class AppPaths
     /// <summary>"windows", "linux" or "macos".</summary>
     public static string Os => OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "macos" : "linux";
 
-    /// <summary>Release asset suffix for this machine: win-x64, linux-x64, linux-arm64, osx-arm64 or osx-x64.</summary>
+    /// <summary>Release asset suffix for this machine, such as win-arm64 or osx-x64.</summary>
     public static string Rid =>
         (OperatingSystem.IsWindows() ? "win" : OperatingSystem.IsMacOS() ? "osx" : "linux") + "-" +
         (System.Runtime.InteropServices.RuntimeInformation.OSArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "arm64" : "x64");

@@ -2,6 +2,8 @@
 
 <h1 align="center">PhoneBox</h1>
 
+**Bản tuỳ chỉnh** · [Tải bộ cài Windows, macOS và APK Android](https://github.com/trancaodai1651/doto_phonebox/releases/latest) · [Cách cài và dùng web panel trên iPhone/iPad](TUY-CHINH.md)
+
 <p align="center">
   <b>English</b> ·
   <a href="docs/README.tr.md">Türkçe</a> ·
@@ -23,13 +25,13 @@ Windows, Linux and macOS. No root, PhoneBox account or cloud service required.</
 
 <p align="center">
   <a href="https://ersinkoc.github.io/phonebox/"><b>Try the live demo</b></a> ·
-  <a href="https://github.com/ersinkoc/phonebox/releases/latest"><b>Download</b></a> ·
+  <a href="https://github.com/trancaodai1651/doto_phonebox/releases/latest"><b>Download</b></a> ·
   <a href="#quick-start"><b>Quick start</b></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/ersinkoc/phonebox/actions/workflows/build.yml"><img src="https://github.com/ersinkoc/phonebox/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
-  <a href="https://github.com/ersinkoc/phonebox/releases/latest"><img src="https://img.shields.io/github/v/release/ersinkoc/phonebox?label=release" alt="Latest release"></a>
+  <a href="https://github.com/trancaodai1651/doto_phonebox/actions/workflows/build.yml"><img src="https://github.com/trancaodai1651/doto_phonebox/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
+  <a href="https://github.com/trancaodai1651/doto_phonebox/releases/latest"><img src="https://img.shields.io/github/v/release/trancaodai1651/doto_phonebox?label=release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-.NET%2010-512bd4" alt="Windows, Linux, macOS; .NET 10">
   <img src="https://img.shields.io/badge/Android-5%2B-3ddc84" alt="Android 5+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
@@ -60,6 +62,8 @@ and a cost overview.
 <sub>A tour with demo data: notifications, permission prompts and automatic page switching. <a href="docs/tour-0.6.mp4">Watch the MP4</a></sub></p>
 
 ## Quick start
+
+For the fork, follow [its installation instructions](TUY-CHINH.md). The setup commands below are for the upstream project.
 
 You need an **Android 5+ phone** (Android 6 or later recommended) and a supported computer. USB uses a data cable and USB debugging; Wi-Fi pairing
 works without either. Release agents include .NET, so you do not need to install the runtime.
