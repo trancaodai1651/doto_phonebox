@@ -50,3 +50,5 @@ tools/ui-tests/test-results/
 
 *.log
 *.txt
+# fork: local publish output
+publish/

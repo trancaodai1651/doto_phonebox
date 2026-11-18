@@ -37,11 +37,15 @@ public static class Lan
 
     public static string Fingerprint(X509Certificate2 cert) => Convert.ToHexString(SHA256.HashData(cert.RawData)).ToLowerInvariant();
 
-    /// <summary>Addresses the phone can try: private LAN IPv4 addresses first, then Tailscale (100.64.0.0/10).</summary>
-    public static IReadOnlyList<string> Addresses()
+    /// <summary>
+    /// Addresses the phone can try: private LAN IPv4 addresses first, then other adapter addresses (fork: e.g. an Ethernet
+    /// on a public-range subnet), then Tailscale (100.64.0.0/10). With access "tailscale" only the Tailscale ones.
+    /// </summary>
+    public static IReadOnlyList<string> Addresses(string access = "local")
     {
         var lan = new List<string>();
         var tailscale = new List<string>();
+        var other = new List<string>();
         foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
         {
             if (ni.OperationalStatus != OperationalStatus.Up || ni.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
@@ -56,9 +60,10 @@ public static class Lan
                 var b = ua.Address.GetAddressBytes();
                 if (b[0] == 100 && b[1] is >= 64 and <= 127) tailscale.Add(ua.Address.ToString());
                 else if (b[0] == 10 || (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168)) lan.Add(ua.Address.ToString());
+                else if (!isTailscale && !(b[0] == 169 && b[1] == 254) && b[0] != 127 && b[0] < 224) other.Add(ua.Address.ToString());
             }
         }
-        return lan.Concat(tailscale).Distinct().ToList();
+        return (access == "tailscale" ? tailscale : lan.Concat(other).Concat(tailscale)).Distinct().ToList();
     }
 
     /// <summary>

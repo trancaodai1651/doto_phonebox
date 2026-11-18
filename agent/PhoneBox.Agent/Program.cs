@@ -32,6 +32,8 @@ var configStore = new ConfigStore(configPath);
 configStore.PersistGenerated(); // keep the Wi-Fi token stable across restarts
 var lanCfg = configStore.Get().Lan;
 var lanCert = lanCfg.Enabled ? Lan.Certificate() : null;
+// Fork: a browser-trusted certificate for the MagicDNS name, for Safari on iPhone / iPad (see TailscaleAccess.cs)
+var tsCert = lanCert is not null && lanCfg.TailscaleCert ? new TailscaleCert() : null;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -45,7 +47,19 @@ builder.WebHost.ConfigureKestrel(k =>
     k.Limits.MaxRequestLineSize = 16 * 1024;
     k.Listen(IPAddress.Loopback, Port);
     // Wi-Fi / Tailscale: HTTPS with a pinned self-signed certificate, token required (see Lan.cs).
-    if (lanCert is not null) k.Listen(IPAddress.Any, lanCfg.Port, l => l.UseHttps(lanCert));
+    // Fork: IPv4 and IPv6. Peers outside lan.access (see NetAccess) are dropped before the TLS handshake, and plain HTTP
+    // ("IP:port" typed in Safari) is redirected to https on the same port.
+    if (lanCert is not null) k.ListenAnyIP(lanCfg.Port, l =>
+    {
+        l.Use(next => conn =>
+        {
+            if (NetAccess.Allowed(conn.RemoteEndPoint, lanCfg)) return next(conn);
+            conn.Abort();
+            return Task.CompletedTask;
+        });
+        l.Use(NetAccess.RedirectPlainHttp);
+        l.UseHttps(o => o.ServerCertificateSelector = (_, sni) => tsCert?.For(sni) ?? lanCert);
+    });
 });
 builder.Logging.ClearProviders();
 builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
@@ -159,7 +173,9 @@ app.MapPost("/api/controls/radio-directory/check", async (HttpRequest req, Cance
 // path the phone uses; on the local port that is simply /api/... Routing runs after this, so it sees the new path.
 app.Use((ctx, next) =>
 {
-    if (ctx.Connection.LocalPort == Port && ctx.Request.Path.StartsWithSegments("/agent/api", out var rest))
+    // the web panel (iPhone / iPad) calls the same "/agent/api" paths over the Wi-Fi port
+    if ((ctx.Connection.LocalPort == Port || (lanCert is not null && ctx.Connection.LocalPort == lanCfg.Port))
+        && ctx.Request.Path.StartsWithSegments("/agent/api", out var rest))
         ctx.Request.Path = "/api" + rest;
     return next(ctx);
 });
@@ -181,10 +197,23 @@ app.Use(async (ctx, next) =>
         var keyed = Lan.Matches(ctx.Request.Headers.Authorization, lan.Token!)
             || (Lan.IsWebhook(ctx.Request.Path) && (Lan.Matches(ctx.Request.Headers.Authorization, lan.WebhookToken!)
                 || Lan.MatchesQuery(ctx.Request.Query["token"], lan.WebhookToken!)));
+        // Fork: the web panel's cookie opens the same phone API, but only for requests from the panel's own pages.
+        var webKeyed = !keyed && lan.WebPanel && WebPanel.CookieMatches(ctx.Request, lan.WebToken!) && WebPanel.FromPanel(ctx.Request);
         // Pairing without USB: the phone has no key yet and trades a one-time code for it (checked by the endpoint).
-        keyless = !keyed && Lan.IsPairingClaim(ctx.Request.Method, ctx.Request.Path);
-        if (origin != "" || !Lan.AllowedOverLan(ctx.Request.Path) || !(keyed || keyless))
+        // The web panel link carries its key in the path (checked by the endpoint).
+        var webLogin = lan.WebPanel && WebPanel.IsLogin(ctx.Request.Method, ctx.Request.Path);
+        keyless = !keyed && !webKeyed && (Lan.IsPairingClaim(ctx.Request.Method, ctx.Request.Path) || webLogin);
+        // FromPanel already required the panel's own origin; the PIN form posts from it too
+        var originOk = origin == "" || webKeyed || (webLogin && origin == $"https://{ctx.Request.Host}");
+        var pathOk = Lan.AllowedOverLan(ctx.Request.Path) || (webKeyed && WebPanel.IsPage(ctx.Request.Path)) || webLogin;
+        if (!originOk || !pathOk || !(keyed || webKeyed || keyless))
         {
+            // a browser without the cookie that opens the panel goes to the PIN form
+            if (lan.WebPanel && !keyed && HttpMethods.IsGet(ctx.Request.Method) && ctx.Request.Path.StartsWithSegments("/panel"))
+            {
+                ctx.Response.Redirect("/");
+                return;
+            }
             ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
@@ -238,7 +267,7 @@ app.MapGet("/api/pair", (ConfigStore cfg) =>
         port = lanCfg.Port,
         token = lan.Token,
         fingerprint = Lan.Fingerprint(lanCert),
-        hosts = Lan.Addresses(),
+        hosts = Lan.Addresses(lanCfg.Access),
     });
 });
 
@@ -248,7 +277,7 @@ app.MapPost("/api/pair/start", (ConfigStore cfg, PairingCodes codes) =>
     if (!cfg.Get().Lan.Enabled || lanCert is null)
         return Results.Json(new { enabled = false, configured = cfg.Get().Lan.Enabled });
     var (code, expiresAt, attempt) = codes.Start(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-    var hosts = Lan.Addresses();
+    var hosts = Lan.Addresses(lanCfg.Access);
     var fingerprint = Lan.Fingerprint(lanCert);
     var link = PairingCodes.Link(Environment.MachineName, fingerprint, lanCfg.Port, hosts, code);
     var apk = $"https://github.com/ersinkoc/phonebox/releases/download/v{AppPaths.Version}/PhoneBox-{AppPaths.Version}.apk";
@@ -285,7 +314,7 @@ app.MapPost("/api/pair/claim", async (HttpRequest req, ConfigStore cfg, PairingC
         port = lanCfg.Port,
         token = lan.Token,
         fingerprint = Lan.Fingerprint(lanCert),
-        hosts = Lan.Addresses(),
+        hosts = Lan.Addresses(lanCfg.Access),
     });
 });
 
@@ -295,7 +324,7 @@ app.MapGet("/api/lan", (ConfigStore cfg) => Results.Json(new
     active = lanCert is not null,
     port = lanCfg.Port,
     restartNeeded = cfg.Get().Lan.Enabled != (lanCert is not null) || (lanCert is not null && cfg.Get().Lan.Port != lanCfg.Port),
-    hosts = Lan.Addresses(),
+    hosts = Lan.Addresses(lanCfg.Access),
     fingerprint = lanCert is null ? null : Lan.Fingerprint(lanCert),
 }));
 
@@ -314,8 +343,17 @@ app.MapPost("/api/restart", (IHostApplicationLifetime life) =>
 });
 
 // ---------------------------------------------------------------- settings UI (browser)
-app.MapGet("/", () =>
+app.MapGet("/", (HttpContext ctx, ConfigStore cfg) =>
 {
+    // Fork: on the Wi-Fi port "/" is the web panel's front door: the PIN form, or (with the cookie) the landing page
+    if (lanCert is not null && ctx.Connection.LocalPort == lanCfg.Port)
+    {
+        var lan = cfg.Get().Lan;
+        if (!lan.WebPanel) return Results.StatusCode(StatusCodes.Status403Forbidden);
+        return WebPanel.CookieMatches(ctx.Request, lan.WebToken!)
+            ? Results.Content(WebPanel.LandingHtml, "text/html; charset=utf-8")
+            : Results.Content(WebPanel.LoginHtml(null), "text/html; charset=utf-8");
+    }
     using var s = AppPaths.Resource("settings.html")!;
     using var r = new StreamReader(s);
     return Results.Content(r.ReadToEnd(), "text/html; charset=utf-8");
@@ -337,6 +375,66 @@ app.MapGet("/panel/{*file}", (string? file, HttpRequest req) =>
     return AppPaths.Resource("www/" + file) is { } s ? Results.Stream(s, type) : Results.NotFound();
 });
 app.MapGet("/favicon.ico", () => AppPaths.Resource("phonebox.ico") is { } s ? Results.Stream(s, "image/x-icon") : Results.NotFound());
+
+// ---------------------------------------------------------------- Fork: web panel for iPhone / iPad over Tailscale
+// The private link: sets the cookie and shows the "Add to Home Screen" page. Wi-Fi port only.
+app.MapGet("/web/{key}", (string key, HttpContext ctx, ConfigStore cfg) =>
+{
+    var lan = cfg.Get().Lan;
+    if (lanCert is null || ctx.Connection.LocalPort != lanCfg.Port || !lan.WebPanel || !Lan.MatchesQuery(key, lan.WebToken!))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    WebPanel.SetCookie(ctx.Response, lan.WebToken!);
+    ctx.Response.Headers["Referrer-Policy"] = "no-referrer";
+    app.Logger.LogInformation("web panel opened from {Remote}", ctx.Connection.RemoteIpAddress);
+    return Results.Content(WebPanel.LandingHtml, "text/html; charset=utf-8");
+});
+// Typing https://IP:port shows the PIN form ("/"); a right PIN sets the same cookie as the private link. Wi-Fi port only.
+var pinGate = new PinGate();
+app.MapPost("/web/login", async (HttpContext ctx, ConfigStore cfg) =>
+{
+    var lan = cfg.Get().Lan;
+    if (lanCert is null || ctx.Connection.LocalPort != lanCfg.Port || !lan.WebPanel || !ctx.Request.HasFormContentType)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    var who = ctx.Connection.RemoteIpAddress?.ToString() ?? "?";
+    var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    if (pinGate.Locked(who, now))
+        return Results.Content(WebPanel.LoginHtml("Sai quá nhiều lần. Thử lại sau 5–10 phút."), "text/html; charset=utf-8", statusCode: 429);
+    var form = await ctx.Request.ReadFormAsync();
+    if (!PinGate.Matches(form["pin"].ToString().Trim(), lan.WebPin!))
+    {
+        pinGate.Fail(who, now);
+        app.Logger.LogWarning("web panel: wrong PIN from {Remote}", who);
+        return Results.Content(WebPanel.LoginHtml("Mã PIN không đúng."), "text/html; charset=utf-8", statusCode: 401);
+    }
+    pinGate.Success(who);
+    WebPanel.SetCookie(ctx.Response, lan.WebToken!);
+    app.Logger.LogInformation("web panel: signed in with PIN from {Remote}", who);
+    return Results.Redirect("/");
+});
+// Local only (settings): the addresses to type, the PIN, and a QR code with the private link.
+app.MapGet("/api/web", (ConfigStore cfg) =>
+{
+    var lan = cfg.Get().Lan;
+    if (lanCert is null || !lan.WebPanel) return Results.Json(new { enabled = false });
+    var hosts = new List<string>();
+    if (tsCert?.Name is { } name && tsCert.For(name) is not null) hosts.Add(name); // trusted certificate: no Safari warning
+    hosts.AddRange(Lan.Addresses(lanCfg.Access));
+    var bases = hosts.Select(h => $"{(h.Contains(':') ? $"[{h}]" : h)}:{lanCfg.Port}").ToList();
+    var links = bases.Select(b => $"https://{b}/web/{lan.WebToken}").ToList();
+    return Results.Json(new
+    {
+        enabled = true,
+        access = lanCfg.Access,
+        allowedCidrs = lanCfg.AllowedCidrs,
+        pin = lan.WebPin,
+        addresses = bases,
+        trustedName = tsCert?.For(tsCert.Name) is not null ? tsCert.Name : null,
+        certError = tsCert?.LastError,
+        links,
+        qr = links.Count > 0 ? PairingCodes.Svg(links[0]) : null,
+    });
+});
+app.MapGet("/web-setup", () => Results.Content(WebSetupPage.Html, "text/html; charset=utf-8"));
 
 // The version lets the settings page save only over what it loaded (X-Config-Version, see ConfigStore.Save).
 app.MapGet("/api/settings", (ConfigStore cfg, HttpResponse res) =>

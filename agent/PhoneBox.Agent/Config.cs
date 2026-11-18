@@ -183,12 +183,29 @@ public sealed class LanConfig
     public string? Token { get; set; }
     /// <summary>Separate key for the webhook API from other machines (push/notify/goto/refresh only). May appear in URLs.</summary>
     public string? WebhookToken { get; set; }
+    /// <summary>
+    /// Fork: who may connect to the Wi-Fi port. "tailscale" = Tailscale only; "local" = Tailscale, the subnets of this
+    /// computer's own adapters (Ethernet / Wi-Fi), private ranges (10/8, 172.16/12, 192.168/16) and <see cref="AllowedCidrs"/>;
+    /// "any" = everyone (still needs the key or PIN). Requires an agent restart.
+    /// </summary>
+    public string Access { get; set; } = "local";
+    /// <summary>Fork: extra networks allowed with Access = "local", e.g. "10.20.0.0/16" for a Wi-Fi on another subnet.</summary>
+    public List<string> AllowedCidrs { get; set; } = [];
+    /// <summary>Fork: 6-digit PIN for opening the web panel by typing https://IP:port. Empty = generate one.</summary>
+    public string? WebPin { get; set; }
+    /// <summary>Fork: serve the panel as a web page for iPhone / iPad over the Wi-Fi port (link /web/&lt;WebToken&gt;).</summary>
+    public bool WebPanel { get; set; } = true;
+    /// <summary>Key in the web panel link. Empty = generate a new one (signs out every browser).</summary>
+    public string? WebToken { get; set; }
+    /// <summary>Fork: get a browser-trusted certificate for the MagicDNS name with "tailscale cert" (HTTPS must be on in the tailnet).</summary>
+    public bool TailscaleCert { get; set; } = true;
 }
 
 public sealed class UpdateConfig
 {
-    /// <summary>Install new GitHub releases automatically (phone app over USB, agent in place).</summary>
-    public bool Auto { get; set; } = true;
+    /// <summary>Install new GitHub releases automatically (phone app over USB, agent in place).
+    /// Fork: off, because an upstream release would replace this customised build.</summary>
+    public bool Auto { get; set; }
     public string Repo { get; set; } = "ersinkoc/phonebox";
 }
 
@@ -526,6 +543,11 @@ public sealed partial class ConfigStore(string path)
         c.Lan.Port = Math.Clamp(c.Lan.Port, 1024, 65535);
         if (string.IsNullOrWhiteSpace(c.Lan.Token)) c.Lan.Token = NewToken();
         if (string.IsNullOrWhiteSpace(c.Lan.WebhookToken)) c.Lan.WebhookToken = NewToken();
+        if (string.IsNullOrWhiteSpace(c.Lan.WebToken)) c.Lan.WebToken = NewToken();
+        c.Lan.Access = c.Lan.Access?.Trim().ToLowerInvariant() is "tailscale" or "any" ? c.Lan.Access.Trim().ToLowerInvariant() : "local";
+        c.Lan.AllowedCidrs = (c.Lan.AllowedCidrs ?? []).Where(x => NetAccess.TryParseCidr(x, out _, out _)).Select(x => x.Trim()).Distinct().Take(32).ToList();
+        if (c.Lan.WebPin is not { Length: 6 } pin || !pin.All(char.IsAsciiDigit))
+            c.Lan.WebPin = System.Security.Cryptography.RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
         c.Night.Brightness = Math.Clamp(c.Night.Brightness, 0.01, 1);
 
         c.Pages = NormalizePages(c.Pages);
@@ -767,7 +789,8 @@ public sealed partial class ConfigStore(string path)
             var onDisk = JsonSerializer.Deserialize<AgentConfig>(File.ReadAllText(path), ReadOpts);
             var damagedIcons = (onDisk?.Pages ?? []).Any(p => p is not null && IconText.Repair(p.Icon) != p.Icon)
                 || (onDisk?.Shortcuts ?? []).Any(s => s is not null && IconText.Repair(s.Icon) != s.Icon);
-            if (!damagedIcons && onDisk?.Lan?.Token == c.Lan.Token && onDisk?.Lan?.WebhookToken == c.Lan.WebhookToken) return;
+            if (!damagedIcons && onDisk?.Lan?.Token == c.Lan.Token && onDisk?.Lan?.WebhookToken == c.Lan.WebhookToken
+                && onDisk?.Lan?.WebToken == c.Lan.WebToken && onDisk?.Lan?.WebPin == c.Lan.WebPin) return;
         }
         catch { }
         Save(JsonSerializer.Serialize(c, WriteOpts), version);
