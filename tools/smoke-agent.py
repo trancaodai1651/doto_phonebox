@@ -2,7 +2,7 @@
 import argparse,json,pathlib,subprocess,tempfile,time,urllib.request,urllib.error,os
 p=argparse.ArgumentParser();p.add_argument('executable');p.add_argument('--version',required=True);p.add_argument('--port',type=int,default=18765);args=p.parse_args()
 exe=pathlib.Path(args.executable).resolve()
-if os.name!='nt':exe.chmod(exe.stat().st_mode|0o111)
+if os.name!='nt' and not os.access(exe, os.X_OK):exe.chmod(exe.stat().st_mode|0o111)
 base=f'http://127.0.0.1:{args.port}'
 with tempfile.TemporaryDirectory(prefix='phonebox-smoke-') as work:
  config=pathlib.Path(work)/'config.json'

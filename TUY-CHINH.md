@@ -17,7 +17,7 @@ Windows và macOS đã kèm .NET. Bộ cài Windows chưa ký Authenticode và b
 
 ## Dùng trên iPhone / iPad
 1. Mở `http://127.0.0.1:8765/web-setup` trên máy tính. Trang này hiện địa chỉ cần gõ và mã PIN.
-2. Trên iPhone/iPad, mở Safari và gõ `192.0.2.45:8766` (Ethernet) hoặc `100.100.10.20:8766` (Tailscale).
+2. Trên iPhone/iPad, mở Safari và gõ địa chỉ Ethernet hoặc Tailscale hiển thị trên trang thiết lập.
 3. Lần đầu, Safari báo chứng chỉ tự ký. Chọn **Hiển thị chi tiết → truy cập trang web này**.
 4. Nhập PIN 6 số. Thiết bị sẽ được ghi nhớ khoảng 400 ngày.
 5. Chọn **Chia sẻ → Thêm vào MH chính** để dùng toàn màn hình. Lần đầu mở từ màn hình chính có thể phải nhập PIN thêm một lần.

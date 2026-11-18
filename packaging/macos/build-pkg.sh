@@ -9,13 +9,16 @@ app="$work/PhoneBox.app"
 resources="$app/Contents/Resources"
 
 mkdir -p "$app/Contents/MacOS" "$resources" dist
-install -m 755 "$here/launcher.sh" "$app/Contents/MacOS/PhoneBox"
+launcher="$app/Contents/MacOS/PhoneBox"
+xcrun clang -arch arm64 -arch x86_64 -mmacosx-version-min=14.0 -Wall -Wextra -Werror \
+    "$here/launcher.c" -o "$launcher"
+lipo "$launcher" -verify_arch arm64 x86_64
 for rid in osx-arm64 osx-x64; do
     ditto "payload/$rid" "$resources/$rid"
     rm -f "$resources/$rid/PhoneBoxAgent.pdb"
 done
-lipo -verify_arch arm64 "$resources/osx-arm64/PhoneBoxAgent"
-lipo -verify_arch x86_64 "$resources/osx-x64/PhoneBoxAgent"
+lipo "$resources/osx-arm64/PhoneBoxAgent" -verify_arch arm64
+lipo "$resources/osx-x64/PhoneBoxAgent" -verify_arch x86_64
 
 cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
